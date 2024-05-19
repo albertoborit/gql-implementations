@@ -1,90 +1,71 @@
-const mongoose = require('mongoose');
 const { ApolloServer, gql } = require('apollo-server');
-const User = require('./user');
-const Role = require('./role');
+const DataLoader = require('dataloader');
 
-// Conectarse a MongoDB
-mongoose.connect('mongodb://127.0.0.1:27017/nplus1', {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-    serverSelectionTimeoutMS: 5000
-});
+// Generar datos de usuarios
+const usersGenerated = () => {
+  const limit = 100000;
+  const arrayOfUsersGenerated = [];
+  for (let i = 0; i < limit; i++) {
+    arrayOfUsersGenerated.push({ id: i, name: "name" + i });
+  }
+  return arrayOfUsersGenerated;
+};
 
-const db = mongoose.connection;
-db.on('error', console.error.bind(console, 'Error de conexión a MongoDB:'));
-db.once('open', function () {
-    console.log('Conexión exitosa a MongoDB');
-});
+// Generar datos de posts
+const postsGenerated = () => {
+  const limit = 100000;
+  const arrayOfPostsGenerated = [];
+  for (let i = 0; i < limit; i++) {
+    arrayOfPostsGenerated.push({ id: "p" + i, title: "title" + i, userId: i });
+  }
+  return arrayOfPostsGenerated;
+};
 
-// Definir el esquema GraphQL
+// Datos generados
+const users = usersGenerated();
+const posts = postsGenerated();
+
 const typeDefs = gql`
   type User {
     id: ID!
     name: String!
-    email: String!
-    roleId: ID!
-    role: String!
+    posts: [Post!]!
   }
 
-  type Role {
+  type Post {
     id: ID!
-    role: String!
-  }
-
-  type UserWithRoles {
-    user: User!
-    roles: [Role!]!
+    title: String!
+    userId: ID!
   }
 
   type Query {
-    getUsers: [User!]!
-    getRoles: [Role!]!
-    getUsersAndRoles: UsersAndRoles!
-  }
-
-  type UsersAndRoles {
     users: [User!]!
-    roles: [Role!]!
   }
 `;
 
-// Resolvers
 const resolvers = {
   Query: {
-    getUsers: async () => {
-      try {
-        const users = await User.find();
-        return users;
-      } catch (error) {
-        throw new Error('No se pudieron obtener los usuarios');
-      }
-    },
-    getRoles: async () => {
-      try {
-        const roles = await Role.find();
-        return roles;
-      } catch (error) {
-        throw new Error('No se pudieron obtener los roles');
-      }
-    },
-    getUsersAndRoles: async () => {
-      try {
-        const users = await User.find();
-        const roles = await Role.find();
-        return { users, roles };
-      } catch (error) {
-        throw new Error('No se pudieron obtener los usuarios y roles');
-      }
+    users: () => users,
+  },
+  User: {
+    posts: (parent, args, context) => {
+      return context.postLoader.load(parent.id);
     },
   },
 };
+
+const postLoader = new DataLoader(async (userIds) => {
+  const userPosts = userIds.map(userId => posts.filter(post => post.userId === userId));
+  return userPosts;
+});
 
 // Configurar Apollo Server
 const server = new ApolloServer({
   typeDefs,
   resolvers,
-  playground: true,
-  cache: false
+  context: () => ({
+    postLoader,
+  }),
 });
 
 // Iniciar el servidor
